@@ -48,6 +48,7 @@ test('startup configuration rejects missing/weak secrets and invalid origins', (
         delete process.env.CLIENT_ORIGINS; delete process.env.PORT;
         assert.equal(configuration().port, 5000);
         process.env.JWT_SECRET = 'weak'; assert.throws(configuration);
+        process.env.JWT_SECRET = 'replace-with-at-least-32-random-characters'; assert.throws(configuration);
         process.env.JWT_SECRET = randomBytes(40).toString('hex');
         process.env.CLIENT_ORIGINS = '*'; assert.throws(configuration);
         process.env.CLIENT_ORIGINS = 'https://example.invalid/path'; assert.throws(configuration);

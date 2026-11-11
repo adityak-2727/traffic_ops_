@@ -2,7 +2,7 @@ function configuration() {
     const mongoUri = process.env.MONGO_URI;
     const jwtSecret = process.env.JWT_SECRET;
     if (!mongoUri || !/^mongodb(?:\+srv)?:\/\//.test(mongoUri)) throw new Error('MONGO_URI must be configured.');
-    if (!jwtSecret || jwtSecret.length < 32) throw new Error('JWT_SECRET must contain at least 32 characters.');
+    if (!jwtSecret || jwtSecret.length < 32 || jwtSecret.startsWith('replace-with-')) throw new Error('JWT_SECRET must be a locally generated secret of at least 32 characters.');
     const origins = (process.env.CLIENT_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173').split(',').map((value) => value.trim()).filter(Boolean);
     for (const origin of origins) {
         let parsed;
