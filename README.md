@@ -93,3 +93,7 @@ For real sandbox testing, configure `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, 
 ## Hosting
 
 `npm run build` produces `client/dist`. The Vercel configuration gives `/api` precedence, serves generated assets, then falls back to the SPA document for nested frontend routes. Local routing checks and browser refreshes are automated; real Vercel routing, reverse-proxy rate-limit identity and production deployment have not been verified. Publishing remains separate from implementation.
+
+Vercel functions use the project's environment settings; the ignored local `server/.env` is not uploaded. In **Project Settings → Environment Variables**, configure `MONGO_URI` (with the intended database name), a locally generated `JWT_SECRET` of at least 32 characters, and `CLIENT_ORIGINS` equal to the exact frontend origin, without a trailing slash. Select **Production** for the production domain. Environment changes apply to a new deployment, so redeploy after updating them. See [Vercel environment configuration](https://vercel.com/docs/environment-variables).
+
+Serverless `/api/health/live` remains available independently of database/configuration readiness. `/api/health/ready` returns 503 until startup succeeds. Startup failures distinguish configuration, database connection and constraint/topology initialization with safe error codes; function logs contain only the stage, request ID, allowlisted configuration field name and numeric database error code. Secret values, raw exception messages and connection strings are never logged.
