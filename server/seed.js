@@ -1,130 +1,58 @@
 const mongoose = require('mongoose');
-const dotenv = require('dotenv');
 const User = require('./src/models/User');
 const ViolationType = require('./src/models/ViolationType');
 const Area = require('./src/models/Area');
-const Violation = require('./src/models/Violation');
-
-dotenv.config();
-
-const connectDB = async () => {
-    try {
-        const conn = await mongoose.connect(process.env.MONGO_URI);
-        console.log(`MongoDB Connected: ${conn.connection.host}`);
-    } catch (error) {
-        console.error(`Error: ${error.message}`);
-        process.exit(1);
+const IdentityVerification = require('./src/models/IdentityVerification');
+const v = require('./src/utils/validation');
+const connectDB = require('./src/config/db');
+function assertDisposableTarget(env) {
+    if (env.SEED_ALLOW_DISPOSABLE !== 'true' || env.NODE_ENV === 'production') throw new Error('Seeding requires explicit disposable local database opt-in.');
+    let url;
+    try { url = new URL(env.MONGO_URI); } catch { throw new Error('A local disposable MongoDB URI is required.'); }
+    const database = decodeURIComponent(url.pathname.slice(1));
+    if (url.protocol !== 'mongodb:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || url.username || url.password) throw new Error('Seeding is restricted to local unauthenticated disposable databases.');
+    if (!/^traffic_ops_(?:dev|demo|test_[a-f0-9]+)$/.test(database) || env.SEED_CONFIRM_DATABASE !== database) throw new Error('Confirm the exact disposable database name before seeding.');
+    return database;
+}
+async function seedDatabase(env = process.env) {
+    const database = assertDisposableTarget(env);
+    const credentials = [
+        { username: 'synthetic_admin', full_name: 'Synthetic Administrator', email: 'admin@example.invalid', role: 'admin', password: v.password(env.SEED_ADMIN_PASSWORD, 'SEED_ADMIN_PASSWORD') },
+        { username: 'synthetic_officer', full_name: 'Synthetic Officer', email: 'officer@example.invalid', role: 'officer', password: v.password(env.SEED_OFFICER_PASSWORD, 'SEED_OFFICER_PASSWORD') },
+        { username: 'synthetic_citizen', full_name: 'Synthetic Citizen', email: 'citizen@example.invalid', role: 'citizen', password: v.password(env.SEED_CITIZEN_PASSWORD, 'SEED_CITIZEN_PASSWORD') },
+    ];
+    if (mongoose.connection.readyState !== 1) {
+        if (env !== process.env) throw new Error('Connect the explicitly checked disposable database before calling the seed library.');
+        await connectDB();
     }
-};
-
-const seedData = async () => {
-    await connectDB();
-
-    try {
-        // Clear existing data
-        await User.deleteMany();
-        await ViolationType.deleteMany();
-        await Area.deleteMany();
-        await Violation.deleteMany();
-
-        console.log('Data cleared...');
-
-        // Create Users
-        const admin = await User.create({
-            username: 'admin',
-            full_name: 'aaloo bhukara',
-            email: 'admin@traffic.com',
-            password: 'AdminPassword!23',
-            role: 'admin',
-        });
-
-        const officer = await User.create({
-            username: 'officer1',
-            full_name: 'Officer John',
-            email: 'officer@traffic.com',
-            password: 'OfficerSecure#45',
-            role: 'officer',
-        });
-
-        const citizen = await User.create({
-            username: 'citizen1',
-            full_name: 'Jane Doe',
-            email: 'citizen@traffic.com',
-            password: 'CitizenSafe$78',
-            role: 'citizen',
-        });
-
-        console.log('Users created...');
-
-        // Create Types
-        // Create Types (According to Indian Motor Vehicles Act)
-        const typeSpeeding = await ViolationType.create({ type_name: 'Over Speeding', base_fine: 2000 });
-        const typeSignal = await ViolationType.create({ type_name: 'Red Light Jump', base_fine: 1000 });
-        const typeHelmet = await ViolationType.create({ type_name: 'Driving Without Helmet', base_fine: 1000 });
-        const typeSeatbelt = await ViolationType.create({ type_name: 'Driving Without Seatbelt', base_fine: 1000 });
-        const typeDrunk = await ViolationType.create({ type_name: 'Drunk Driving', base_fine: 10000 });
-        const typeLicense = await ViolationType.create({ type_name: 'Driving Without License', base_fine: 5000 });
-        const typeInsurance = await ViolationType.create({ type_name: 'Driving Without Insurance', base_fine: 2000 });
-        const typePUC = await ViolationType.create({ type_name: 'PUC Expired', base_fine: 2000 });
-        const typePhone = await ViolationType.create({ type_name: 'Using Phone while Driving', base_fine: 5000 });
-        const typeWrongSide = await ViolationType.create({ type_name: 'Wrong Side Driving', base_fine: 5000 });
-        const typeRash = await ViolationType.create({ type_name: 'Rash Driving', base_fine: 5000 });
-
-        console.log('Violation Types created...');
-
-        // Create Areas (Indian Locations)
-        const areaCP = await Area.create({ area_name: 'Connaught Place', city: 'New Delhi' });
-        const areaMG = await Area.create({ area_name: 'MG Road', city: 'Bangalore' });
-        const areaMarine = await Area.create({ area_name: 'Marine Drive', city: 'Mumbai' });
-        const areaHitech = await Area.create({ area_name: 'Hitech City', city: 'Hyderabad' });
-        const areaPark = await Area.create({ area_name: 'Park Street', city: 'Kolkata' });
-        const areaSec17 = await Area.create({ area_name: 'Sector 17', city: 'Chandigarh' });
-        const areaCivil = await Area.create({ area_name: 'Civil Lines', city: 'Jaipur' });
-        const areaAnna = await Area.create({ area_name: 'Anna Salai', city: 'Chennai' });
-        const areaCyber = await Area.create({ area_name: 'Cyber Hub', city: 'Gurgaon' });
-
-        // Create Demo Violations
-        await Violation.create({
-            vehicle_number: 'XY-01-AB-1234',
-            owner_name: 'John Smith',
-            user: citizen._id, // Linked to our demo citizen
-            violation_type: typeSpeeding._id,
-            area: areaMG._id,
-            officer: officer._id,
-            fine_amount: 100,
-            status: 'paid',
-            notes: 'Overspeeding by 20kmph',
-            violation_date: new Date('2025-12-01'),
-        });
-
-        await Violation.create({
-            vehicle_number: 'XY-01-CD-5678',
-            owner_name: 'Jane Doe',
-            user: citizen._id,
-            violation_type: typeSignal._id,
-            area: areaCP._id,
-            officer: officer._id,
-            fine_amount: 50,
-            status: 'unpaid',
-            notes: 'Jumped red light',
-            violation_date: new Date(), // Today
-        });
-
-        console.log('Violations seeded...');
-        console.log('-----------------------------------');
-        console.log('SEEDING COMPLETE');
-        console.log('-----------------------------------');
-        console.log(`Admin ID: ${admin._id}`);
-        console.log(`Officer ID: ${officer._id}`);
-        console.log(`Citizen ID: ${citizen._id}`);
-        console.log(`Speeding Type ID: ${typeSpeeding._id}`);
-        console.log(`CP Area ID: ${areaCP._id}`);
-
-        process.exit();
-    } catch (error) {
-        console.error(error);
-        process.exit(1);
-    }
-};
-
-seedData();
+    if (mongoose.connection.name !== database) throw new Error('Connected database does not match the confirmed disposable target.');
+    await Promise.all([User.init(), ViolationType.init(), Area.init(), IdentityVerification.init()]);
+    await mongoose.connection.transaction(async (session) => {
+        const users = [];
+        for (const input of credentials) {
+            let user = await User.findOne({ email: input.email }).session(session);
+            if (user && (user.username !== input.username || user.role !== input.role)) throw new Error('Existing synthetic identity conflicts with seed roles; manual review is required.');
+            if (!user) [user] = await User.create([{ ...input, onboarding_status: 'verified' }], { session });
+            users.push(user);
+        }
+        const [admin, , citizen] = users;
+        if (!citizen.verified_at) {
+            citizen.onboarding_status = 'verified'; citizen.verified_by = admin._id; citizen.verified_at = new Date();
+            await citizen.save({ session });
+            await IdentityVerification.create([{ citizen_id: citizen._id, actor_id: admin._id, reference: 'SYNTHETIC-DISPOSABLE-SEED', verified_at: citizen.verified_at }], { session });
+        }
+        for (const policy of [
+            { type_name: 'Synthetic demo INR fine', amount_minor: 10000, currency: 'INR', base_fine: 100, policy_version: 1 },
+            { type_name: 'Synthetic sandbox USD fine', amount_minor: 500, currency: 'USD', policy_version: 1 },
+        ]) await ViolationType.updateOne({ type_name: policy.type_name }, { $setOnInsert: policy }, { upsert: true, session, runValidators: true });
+        await Area.updateOne({ area_name: 'Synthetic Junction', city: 'Demo City' }, { $setOnInsert: { area_name: 'Synthetic Junction', city: 'Demo City' } }, { upsert: true, session, runValidators: true });
+    });
+    return { users: 3, policies: 2, areas: 1 };
+}
+if (require.main === module) {
+    require('dotenv').config({ path: require('node:path').join(__dirname, '.env'), quiet: true });
+    seedDatabase().then((counts) => console.log(JSON.stringify({ event: 'synthetic_seed_complete', ...counts })))
+        .catch(() => { console.error(JSON.stringify({ event: 'synthetic_seed_failed', message: 'Check disposable target opt-in, confirmation, and locally configured seed credentials.' })); process.exitCode = 1; })
+        .finally(() => mongoose.disconnect());
+}
+module.exports = { assertDisposableTarget, seedDatabase };

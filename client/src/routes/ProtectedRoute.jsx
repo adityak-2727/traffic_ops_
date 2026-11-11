@@ -6,9 +6,15 @@ import { useContext } from 'react';
 import AuthContext from '../auth/AuthContext';
 
 const ProtectedRoute = ({ allowedRoles }) => {
-    const { user, loading } = useContext(AuthContext);
+    const { user, loading, sessionError, revalidate, logout } = useContext(AuthContext);
 
-    if (loading) return <div>Loading...</div>;
+    if (loading) return <p role="status">Verifying your session...</p>;
+
+    if (sessionError) return <div role="alert" className="card">
+        <p>{sessionError}</p>
+        <button className="btn btn-primary" onClick={() => revalidate()}>Retry session</button>
+        <button className="btn btn-ghost" onClick={() => logout().catch(() => {})}>Sign out</button>
+    </div>;
 
     if (!user) {
         return <Navigate to="/login" replace />;

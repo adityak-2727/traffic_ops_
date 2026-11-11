@@ -1,8 +1,10 @@
 import { useState, useContext } from 'react';
 import AuthContext from '../auth/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ShieldCheck, Mail, Lock, Loader2 } from 'lucide-react';
+import { useRef } from 'react';
+import { errorMessage } from '../api/axios';
 
 const Login = () => {
     const { login } = useContext(AuthContext);
@@ -10,6 +12,7 @@ const Login = () => {
     const [formData, setFormData] = useState({ email: '', password: '' });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const submitting = useRef(false);
 
     const handleChange = (e) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -17,15 +20,18 @@ const Login = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (submitting.current) return;
+        submitting.current = true;
         setLoading(true);
         setError(null);
         try {
             await login(formData.email, formData.password);
             navigate('/');
         } catch (err) {
-            setError(err.response?.data?.message || 'Invalid email or password');
+            setError(errorMessage(err, 'Invalid email or password'));
         } finally {
             setLoading(false);
+            submitting.current = false;
         }
     };
 
@@ -78,7 +84,7 @@ const Login = () => {
                     <motion.div
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="mb-6 p-4 bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 text-red-700 rounded-xl text-sm flex items-start gap-3"
+                        className="mb-6 p-4 bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 text-red-700 rounded-xl text-sm flex items-start gap-3" role="alert"
                     >
                         <div className="w-1 h-full bg-red-500 rounded-full" />
                         <p className="flex-1">{error}</p>
@@ -93,8 +99,8 @@ const Login = () => {
                         transition={{ delay: 0.5 }}
                         className="form-group"
                     >
-                        <label className="form-label">
-                            Email Address
+                        <label htmlFor="login-email" className="form-label">
+                            Email address
                         </label>
                         <div style={{ position: 'relative' }}>
                             <div style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none', transition: 'color 0.2s' }}>
@@ -102,8 +108,9 @@ const Login = () => {
                             </div>
                             <input
                                 name="email"
+                                id="login-email"
                                 type="email"
-                                placeholder="officer@traffic.com"
+                                autoComplete="username"
                                 className="form-control"
                                 style={{ paddingLeft: '3rem' }}
                                 onChange={handleChange}
@@ -118,7 +125,7 @@ const Login = () => {
                         transition={{ delay: 0.6 }}
                         className="form-group"
                     >
-                        <label className="form-label">
+                        <label htmlFor="login-password" className="form-label">
                             Password
                         </label>
                         <div style={{ position: 'relative' }}>
@@ -127,6 +134,8 @@ const Login = () => {
                             </div>
                             <input
                                 name="password"
+                                id="login-password"
+                                autoComplete="current-password"
                                 type="password"
                                 placeholder="••••••••"
                                 className="form-control"
@@ -154,10 +163,12 @@ const Login = () => {
                                 <span>Signing in...</span>
                             </>
                         ) : (
-                            'Sign In'
+                            'Sign in'
                         )}
                     </motion.button>
                 </form>
+
+                <p className="account-link"><Link to="/register">Create citizen account</Link></p>
 
                 {/* Footer */}
                 <motion.div
@@ -168,7 +179,7 @@ const Login = () => {
                 >
                     <div className="flex items-center justify-center gap-2">
                         <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                        <span>Secure Connection</span>
+                        <span>Traffic violation management</span>
                     </div>
                     <p className="mt-2">&copy; 2026 TrafficOps Management System</p>
                 </motion.div>

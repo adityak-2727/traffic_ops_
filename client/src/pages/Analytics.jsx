@@ -1,218 +1,57 @@
-import { useState, useEffect } from 'react';
-import API from '../api/axios';
+import { useCallback, useEffect, useState } from 'react';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, BarElement, CategoryScale, LinearScale } from 'chart.js';
 import { Pie, Bar } from 'react-chartjs-2';
-import { motion } from 'framer-motion';
-import { TrendingUp, PieChart, BarChart } from 'lucide-react';
+import API, { errorMessage } from '../api/axios';
+import { ErrorNotice, Loading } from '../components/Feedback';
+import { money } from '../utils/money';
 
 ChartJS.register(ArcElement, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
+const colors = ['#10b981', '#ef4444', '#f59e0b'];
 
-const Analytics = () => {
-    const [stats, setStats] = useState(null);
-    const [typeStats, setTypeStats] = useState([]);
-    const [loading, setLoading] = useState(true);
-
+export default function Analytics() {
+    const [resource, setResource] = useState({ loading: true });
+    const load = useCallback(signal => Promise.all([API.get('/analytics/stats', { signal }), API.get('/analytics/by-type', { signal })])
+        .then(([stats, types]) => {
+            if (!signal?.aborted) setResource({ loading: false, stats: stats.data, types: types.data });
+        }).catch(error => {
+            if (!signal?.aborted) setResource({ loading: false, error: errorMessage(error, 'Administrative analytics could not be loaded.') });
+        }), []);
     useEffect(() => {
-        const fetchStats = async () => {
-            try {
-                const statsRes = await API.get('/analytics/stats');
-                const typeRes = await API.get('/analytics/by-type');
-                setStats(statsRes.data);
-                setTypeStats(typeRes.data);
-            } catch (error) {
-                console.error('Error fetching analytics', error);
-            } finally {
-                setLoading(false);
-            }
-        };
+        const controller = new AbortController();
+        load(controller.signal);
+        return () => controller.abort();
+    }, [load]);
+    const counts = resource.stats?.counts;
 
-        fetchStats();
-    }, []);
-
-    if (loading) return (
-        <div className="flex justify-center items-center h-64">
-            <div className="relative">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-                <div className="absolute inset-0 animate-ping rounded-full h-12 w-12 border-2 border-indigo-400 opacity-20"></div>
-            </div>
-        </div>
-    );
-
-    const pieData = {
-        labels: ['Collected', 'Pending'],
-        datasets: [
-            {
-                data: [stats?.collectedFines || 0, stats?.pendingFines || 0],
-                backgroundColor: [
-                    'rgba(16, 185, 129, 0.8)',  // Emerald
-                    'rgba(239, 68, 68, 0.8)',    // Red
-                ],
-                borderColor: [
-                    'rgb(16, 185, 129)',
-                    'rgb(239, 68, 68)',
-                ],
-                borderWidth: 2,
-                hoverOffset: 8,
-            },
-        ],
-    };
-
-    const barData = {
-        labels: typeStats.map(t => t.type_name),
-        datasets: [
-            {
-                label: 'Violations Count',
-                data: typeStats.map(t => t.count),
-                backgroundColor: 'rgba(99, 102, 241, 0.8)',  // Indigo
-                borderColor: 'rgb(99, 102, 241)',
-                borderWidth: 2,
-                borderRadius: 8,
-                hoverBackgroundColor: 'rgba(79, 70, 229, 0.9)',
-            },
-        ],
-    };
-
-    const chartOptions = {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: {
-                labels: {
-                    font: {
-                        size: 12,
-                        family: "'Inter', sans-serif",
-                        weight: '600',
-                    },
-                    padding: 15,
-                    usePointStyle: true,
-                },
-            },
-            tooltip: {
-                backgroundColor: 'rgba(15, 23, 42, 0.9)',
-                titleFont: {
-                    size: 13,
-                    weight: 'bold',
-                },
-                bodyFont: {
-                    size: 12,
-                },
-                padding: 12,
-                cornerRadius: 8,
-            },
-        },
-    };
-
-    return (
-        <div className="container">
-            <header className="page-header">
-                <motion.h2
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="page-title"
-                >
-                    Analytics Dashboard
-                </motion.h2>
-                <motion.p
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.1 }}
-                    className="page-subtitle"
-                >
-                    Real-time insights and performance metrics.
-                </motion.p>
-            </header>
-
-            <div className="grid-cols-3" style={{ marginBottom: '2rem' }}>
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="card-stat"
-                >
-                    <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                            <div style={{ padding: '0.75rem', borderRadius: '0.75rem', display: 'inline-flex', background: 'linear-gradient(135deg, #e0e7ff 0%, #ede9fe 100%)', color: '#4f46e5', boxShadow: 'var(--shadow-md)' }}>
-                                <TrendingUp size={24} strokeWidth={2.5} />
-                            </div>
-                        </div>
-                        <h3 style={{ fontSize: '1.875rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.25rem', lineHeight: 1 }}>{stats?.totalViolations}</h3>
-                        <p style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Total Violations</p>
-                    </div>
-                </motion.div>
-
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                    className="card-stat"
-                >
-                    <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                            <div style={{ padding: '0.75rem', borderRadius: '0.75rem', display: 'inline-flex', background: 'linear-gradient(135deg, #dcfce7 0%, #d1fae5 100%)', color: '#059669', boxShadow: 'var(--shadow-md)' }}>
-                                <TrendingUp size={24} strokeWidth={2.5} />
-                            </div>
-                        </div>
-                        <h3 style={{ fontSize: '1.875rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.25rem', lineHeight: 1 }}>₹{stats?.totalFines}</h3>
-                        <p style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Total Revenue</p>
-                    </div>
-                </motion.div>
-
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2 }}
-                    className="card-stat"
-                >
-                    <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                            <div style={{ padding: '0.75rem', borderRadius: '0.75rem', display: 'inline-flex', background: 'linear-gradient(135deg, #fee2e2 0%, #fce7f3 100%)', color: '#dc2626', boxShadow: 'var(--shadow-md)' }}>
-                                <TrendingUp size={24} strokeWidth={2.5} />
-                            </div>
-                        </div>
-                        <h3 style={{ fontSize: '1.875rem', fontWeight: 700, color: '#dc2626', marginBottom: '0.25rem', lineHeight: 1 }}>₹{stats?.pendingFines}</h3>
-                        <p style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Pending Amount</p>
-                    </div>
-                </motion.div>
-            </div>
-
-            <div className="grid-cols-2" style={{ gap: '2rem' }}>
-                <motion.div
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.3 }}
-                    className="card"
-                    style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column' }}
-                >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
-                        <div style={{ padding: '0.5rem', borderRadius: '0.5rem', background: '#f3e8ff', color: '#9333ea' }}>
-                            <PieChart size={20} />
-                        </div>
-                        <h3 style={{ fontSize: '1.125rem', fontWeight: 600, color: 'var(--text-primary)' }}>Collection Efficiency</h3>
-                    </div>
-                    <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px' }}>
-                        <Pie data={pieData} options={chartOptions} />
-                    </div>
-                </motion.div>
-
-                <motion.div
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.4 }}
-                    className="card"
-                    style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column' }}
-                >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
-                        <div style={{ padding: '0.5rem', borderRadius: '0.5rem', background: '#e0e7ff', color: '#4f46e5' }}>
-                            <BarChart size={20} />
-                        </div>
-                        <h3 style={{ fontSize: '1.125rem', fontWeight: 600, color: 'var(--text-primary)' }}>Violations by Type</h3>
-                    </div>
-                    <div style={{ flex: 1, minHeight: '300px' }}>
-                        <Bar data={barData} options={{ ...chartOptions, maintainAspectRatio: false }} />
-                    </div>
-                </motion.div>
-            </div>
-        </div>
-    );
-};
-
-export default Analytics;
+    return <div className="container"><header className="page-header"><h1 className="page-title">Analytics</h1>
+        <p className="page-subtitle">Administrative reports across all records. Currency totals remain separate.</p></header>
+        {resource.loading ? <Loading>Loading administrative analytics...</Loading> : resource.error ?
+            <ErrorNotice message={resource.error} onRetry={() => { setResource({ loading: true }); load(); }} /> : <>
+                <section className="card"><h2>Case counts</h2><dl className="detail-list">
+                    <div><dt>Total violations</dt><dd>{counts.total}</dd></div><div><dt>Paid</dt><dd>{counts.paid}</dd></div>
+                    <div><dt>Unpaid</dt><dd>{counts.unpaid}</dd></div><div><dt>Disputed</dt><dd>{counts.disputed}</dd></div>
+                </dl></section>
+                {counts.total === 0 ? <p className="feedback" role="status">No violations have been recorded.</p> : <div className="grid-cols-2" style={{ marginTop: '1.5rem' }}>
+                    <figure className="card"><figcaption>Violation status (case counts)</figcaption><div style={{ height: 280 }}>
+                        <Pie aria-hidden="true" data={{ labels: ['Paid', 'Unpaid', 'Disputed'], datasets: [{ data: [counts.paid, counts.unpaid, counts.disputed], backgroundColor: colors }] }}
+                            options={{ responsive: true, maintainAspectRatio: false }} />
+                    </div></figure>
+                    <figure className="card"><figcaption>Violations by type</figcaption><div style={{ height: 280 }}>
+                        <Bar aria-hidden="true" data={{ labels: resource.types.map(type => type.type_name), datasets: [{ label: 'Cases', data: resource.types.map(type => type.count), backgroundColor: '#6366f1' }] }}
+                            options={{ responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }} />
+                    </div></figure>
+                </div>}
+                <h2 className="section-title">Fine totals by currency</h2>
+                <div className="grid-cols-2">{resource.stats.totals.map(total => <section className="card" key={total.currency}><h3>{total.currency}</h3>
+                    <dl className="detail-list"><div><dt>Total fines</dt><dd>{money({ currency: total.currency, amount_minor: total.total_minor })}</dd></div>
+                        <div><dt>Collected</dt><dd>{money({ currency: total.currency, amount_minor: total.paid_minor })}</dd></div>
+                        <div><dt>Unpaid</dt><dd>{money({ currency: total.currency, amount_minor: total.unpaid_minor })}</dd></div>
+                        <div><dt>Disputed</dt><dd>{money({ currency: total.currency, amount_minor: total.disputed_minor })}</dd></div></dl>
+                </section>)}</div>
+                <h2 className="section-title">Type counts</h2><div className="table-container scroll-table"><table className="table">
+                    <thead><tr><th scope="col">Violation type</th><th scope="col">Cases</th></tr></thead>
+                    <tbody>{resource.types.map(type => <tr key={type._id || type.type_name}><td>{type.type_name}</td><td>{type.count}</td></tr>)}</tbody>
+                </table></div>
+            </>}
+    </div>;
+}

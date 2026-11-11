@@ -1,311 +1,136 @@
-import { useState, useEffect } from 'react';
-import API from '../api/axios';
-import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { Save, Car, User, AlertCircle, MapPin, Banknote, FileText } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { FilePlus } from 'lucide-react';
+import API, { errorMessage } from '../api/axios';
+import { ErrorNotice, Loading } from '../components/Feedback';
+import { money } from '../utils/money';
 
-const RegisterViolation = () => {
-    const navigate = useNavigate();
-    const [formData, setFormData] = useState({
-        vehicle_number: '',
-        owner_name: '',
-        violation_type: '',
-        area: '',
-        fine_amount: 0,
-        notes: '',
-    });
-    const [types, setTypes] = useState([]);
-    const [areas, setAreas] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [message, setMessage] = useState('');
+export default function RegisterViolation() {
+    const [references, setReferences] = useState({ loading: true });
+    const [email, setEmail] = useState('');
+    const [lookup, setLookup] = useState({ loading: false, citizen: null, searched: false });
+    const [verification, setVerification] = useState({ reference: '', confirmed: false, busy: false });
+    const [form, setForm] = useState({ vehicle_number: '', violation_type: '', area: '', notes: '' });
+    const [submission, setSubmission] = useState({ busy: false, error: null, success: false });
+    const lookupGeneration = useRef(0);
+    const submissionLock = useRef(false);
 
-    const [newUser, setNewUser] = useState(null);
-
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const typesRes = await API.get('/violations/types');
-                const areasRes = await API.get('/violations/areas');
-                setTypes(typesRes.data);
-                setAreas(areasRes.data);
-            } catch (error) {
-                console.error("Error fetching reference data", error);
-            }
-        };
-        fetchData();
-    }, []);
-
-    const handleChange = (e) => {
-        setFormData({ ...formData, [e.target.name]: e.target.value });
-    };
-
-    const handleTypeChange = (e) => {
-        const typeId = e.target.value;
-        const selectedType = types.find(t => t._id === typeId);
-        setFormData({
-            ...formData,
-            violation_type: typeId,
-            fine_amount: selectedType ? selectedType.base_fine : 0
-        });
-    };
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setLoading(true);
+    const loadReferences = useCallback(async (signal) => {
         try {
-            const res = await API.post('/violations', formData);
-
-            if (res.data.newUser) {
-                setMessage('Violation Registered! Account Created.');
-                setNewUser(res.data.newUser);
-                // Do NOT navigate automatically if we need to show credentials
-            } else {
-                setMessage('Violation Registered Successfully!');
-                setTimeout(() => navigate('/violations'), 1500);
-            }
+            const [types, areas] = await Promise.all([API.get('/violations/types', { signal }), API.get('/violations/areas', { signal })]);
+            if (!signal?.aborted) setReferences({ loading: false, types: types.data, areas: areas.data });
         } catch (error) {
-            setMessage(error.response?.data?.message || 'Error registering violation');
-        } finally {
-            setLoading(false);
+            if (!signal?.aborted) setReferences({ loading: false, error: errorMessage(error, 'Could not load violation types and areas.') });
+        }
+    }, []);
+    useEffect(() => {
+        const controller = new AbortController();
+        loadReferences(controller.signal);
+        return () => controller.abort();
+    }, [loadReferences]);
+
+    const findCitizen = async event => {
+        event.preventDefault();
+        const generation = ++lookupGeneration.current;
+        setLookup({ loading: true, citizen: null, searched: false });
+        setVerification({ reference: '', confirmed: false, busy: false });
+        try {
+            const { data } = await API.get('/auth/citizens', { params: { email: email.trim().toLowerCase() } });
+            if (generation === lookupGeneration.current) setLookup({ loading: false, citizen: data[0] || null, searched: true });
+        } catch (error) {
+            if (generation === lookupGeneration.current) setLookup({ loading: false, citizen: null, error: errorMessage(error) });
         }
     };
 
-    const handleCloseModal = () => {
-        setNewUser(null);
-        navigate('/violations');
+    const verifyCitizen = async event => {
+        event.preventDefault();
+        if (!verification.confirmed || verification.busy) return;
+        const generation = lookupGeneration.current;
+        setVerification(value => ({ ...value, busy: true }));
+        try {
+            const { data } = await API.post(`/auth/citizens/${lookup.citizen._id}/verify`, { reference: verification.reference.trim() });
+            if (generation === lookupGeneration.current) setLookup({ loading: false, citizen: data, searched: true });
+        } catch (error) {
+            if (generation === lookupGeneration.current) setLookup(value => ({ ...value, error: errorMessage(error) }));
+        } finally { setVerification(value => ({ ...value, busy: false })); }
     };
 
-    return (
-        <div className="container relative">
-            {/* Success Modal for New User */}
-            {newUser && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, backdropFilter: 'blur(4px)' }}>
-                    <motion.div
-                        initial={{ scale: 0.9, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        className="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full mx-4"
-                        style={{ background: 'white', padding: '2rem', borderRadius: '1.5rem', width: '100%', maxWidth: '24rem', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}
-                    >
-                        <div className="text-center mb-6" style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-                            <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4 text-indigo-600" style={{ width: '4rem', height: '4rem', background: '#e0e7ff', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem auto', color: '#4f46e5' }}>
-                                <User size={32} />
+    const submit = async event => {
+        event.preventDefault();
+        if (submissionLock.current || lookup.citizen?.onboarding_status !== 'verified') return;
+        submissionLock.current = true;
+        setSubmission({ busy: true, error: null, success: false });
+        try {
+            await API.post('/violations', { citizen_id: lookup.citizen._id, ...form });
+            setSubmission({ busy: false, error: null, success: true });
+        } catch (error) { setSubmission({ busy: false, error: errorMessage(error), success: false }); }
+        finally { submissionLock.current = false; }
+    };
+    const change = event => setForm(value => ({ ...value, [event.target.name]: event.target.value }));
+    const type = references.types?.find(value => value._id === form.violation_type);
+
+    return <div className="container">
+        <header className="page-header"><h1 className="page-title">Register violation</h1>
+            <p className="page-subtitle">Link a verified citizen and record a policy-based fine.</p></header>
+        {references.loading ? <Loading>Loading violation types and areas...</Loading> : references.error ?
+            <ErrorNotice message={references.error} onRetry={() => { setReferences({ loading: true }); loadReferences(); }} /> :
+            submission.success ? <div role="status" className="card feedback-success"><h2>Violation registered</h2>
+                <p>The citizen is linked to their verified account.</p><Link className="btn btn-primary" to="/violations">View violations</Link></div> : <>
+                <section className="card form-section"><h2>1. Find the citizen</h2>
+                    <p>Use the account email checked during citizen onboarding. Names do not establish identity.</p>
+                    <form onSubmit={findCitizen} className="lookup-form">
+                        <div><label htmlFor="citizen-email" className="form-label">Citizen email</label>
+                            <input id="citizen-email" className="form-control" type="email" maxLength={254} value={email} required
+                                onChange={event => {
+                                    lookupGeneration.current++;
+                                    setEmail(event.target.value);
+                                    setLookup({ loading: false, citizen: null, searched: false });
+                                }} /></div>
+                        <button className="btn btn-outline" disabled={lookup.loading || verification.busy}>{lookup.loading ? 'Finding citizen...' : 'Find citizen'}</button>
+                    </form>
+                    {lookup.error && <ErrorNotice message={lookup.error} />}
+                    {lookup.searched && !lookup.citizen && <p role="status">No citizen account matches that email. Ask the citizen to register first.</p>}
+                    {lookup.citizen && <div className="verified-citizen" role="status">
+                        <strong>{lookup.citizen.full_name}</strong><p>{lookup.citizen.email}</p>
+                        <p>Identity status: {lookup.citizen.onboarding_status}</p>
+                    </div>}
+                    {lookup.citizen && lookup.citizen.onboarding_status !== 'verified' && <form onSubmit={verifyCitizen} className="verification-form">
+                        <h3>Verify citizen identity</h3>
+                        <label htmlFor="verification-reference" className="form-label">Verification reference</label>
+                        <input id="verification-reference" className="form-control" minLength={3} maxLength={120} required
+                            value={verification.reference} disabled={verification.busy} onChange={event => setVerification(value => ({ ...value, reference: event.target.value }))} />
+                        <label className="checkbox-label"><input type="checkbox" required checked={verification.confirmed} disabled={verification.busy}
+                            onChange={event => setVerification(value => ({ ...value, confirmed: event.target.checked }))} />
+                            I checked this citizen&apos;s identity against the reference.</label>
+                        <button className="btn btn-outline" disabled={verification.busy || !verification.confirmed}>{verification.busy ? 'Verifying...' : 'Verify citizen'}</button>
+                    </form>}
+                </section>
+                <section className="card form-section"><h2>2. Violation details</h2>
+                    {submission.error && <ErrorNotice message={submission.error} />}
+                    <form onSubmit={submit}>
+                        <fieldset disabled={submission.busy || lookup.citizen?.onboarding_status !== 'verified'}>
+                            <legend className="sr-only">Violation details</legend>
+                            <div className="grid-cols-2">
+                                <div className="form-group"><label className="form-label" htmlFor="vehicle-number">Vehicle number</label>
+                                    <input id="vehicle-number" className="form-control" name="vehicle_number" minLength={3} maxLength={20} required
+                                        value={form.vehicle_number} onChange={change} /></div>
+                                <div className="form-group"><label className="form-label" htmlFor="violation-type">Violation type</label>
+                                    <select id="violation-type" className="form-control" name="violation_type" required value={form.violation_type} onChange={change}>
+                                        <option value="">Select a violation type</option>{references.types.map(value => <option key={value._id} value={value._id}>{value.type_name}</option>)}
+                                    </select></div>
+                                <div className="form-group"><label className="form-label" htmlFor="area">Area</label>
+                                    <select id="area" className="form-control" name="area" required value={form.area} onChange={change}>
+                                        <option value="">Select an area</option>{references.areas.map(value => <option key={value._id} value={value._id}>{value.area_name}</option>)}
+                                    </select></div>
+                                <div className="form-group"><p className="form-label">Approved fine</p><output aria-live="polite">{type ? money(type) : 'Choose a violation type'}</output>
+                                    <p className="help-text">The server applies the approved policy amount.</p></div>
                             </div>
-                            <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Account Created</h3>
-                            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Share these credentials with the violator.</p>
-                        </div>
-
-                        <div className="bg-slate-50 p-4 rounded-xl space-y-4 mb-6 border border-slate-200" style={{ background: '#f8fafc', padding: '1rem', borderRadius: '0.75rem', marginBottom: '1.5rem', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                            <div>
-                                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '0.25rem' }}>Email</span>
-                                <p style={{ fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-primary)', fontSize: '1rem' }}>{newUser.email}</p>
-                            </div>
-                            <div>
-                                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '0.25rem' }}>Password</span>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <p style={{ fontFamily: 'monospace', fontWeight: 700, color: '#4f46e5', fontSize: '1.125rem' }}>{newUser.password}</p>
-                                    <span style={{ fontSize: '0.75rem', color: '#059669', background: '#d1fae5', padding: '0.25rem 0.5rem', borderRadius: '99px' }}>Auto-generated</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <button
-                            onClick={handleCloseModal}
-                            className="btn btn-primary"
-                            style={{ width: '100%', padding: '0.875rem' }}
-                        >
-                            Done & View Violations
-                        </button>
-                    </motion.div>
-                </div>
-            )}
-
-            <header className="page-header">
-                <motion.h1
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="page-title"
-                >
-                    Register Violation
-                </motion.h1>
-                <motion.p
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.1 }}
-                    className="page-subtitle"
-                >
-                    Create a new traffic violation record.
-                </motion.p>
-            </header>
-
-            {message && (
-                <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`mb-6 p-4 rounded-xl border ${message.includes('Success') || message.includes('Created')
-                        ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                        : 'bg-red-50 border-red-200 text-red-700'
-                        }`}
-                    style={{ marginBottom: '1.5rem', padding: '1rem', borderRadius: '0.75rem', border: '1px solid', borderColor: message.includes('Success') || message.includes('Created') ? '#a7f3d0' : '#fecaca', backgroundColor: message.includes('Success') || message.includes('Created') ? '#ecfdf5' : '#fef2f2', color: message.includes('Success') || message.includes('Created') ? '#047857' : '#b91c1c' }}
-                >
-                    <div className="flex items-center gap-2" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        {message.includes('Success') || message.includes('Created') ? <div className="w-2 h-2 rounded-full bg-emerald-500" style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }} /> : <AlertCircle size={16} />}
-                        {message}
-                    </div>
-                </motion.div>
-            )}
-
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className="card"
-            >
-                <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center gap-2" style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600" style={{ padding: '0.5rem', background: '#e0e7ff', borderRadius: '0.5rem', color: '#4f46e5' }}>
-                        <FileText size={20} />
-                    </div>
-                    <h3 style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Violation Details</h3>
-                </div>
-
-                <form onSubmit={handleSubmit} style={{ padding: '2rem' }}>
-                    <div className="grid-cols-2" style={{ gap: '2rem' }}>
-                        {/* Vehicle Info */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                            <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Vehicle Information</h4>
-                            <div className="form-group">
-                                <label className="form-label">
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Car size={16} color="var(--text-muted)" /> Vehicle Number</span>
-                                </label>
-                                <input
-                                    name="vehicle_number"
-                                    className="form-control"
-                                    style={{ textTransform: 'uppercase', fontWeight: 500 }}
-                                    placeholder="e.g. MH-12-AB-1234"
-                                    onChange={handleChange}
-                                    required
-                                />
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><User size={16} color="var(--text-muted)" /> Owner Name</span>
-                                </label>
-                                <input
-                                    name="owner_name"
-                                    className="form-control"
-                                    placeholder="Driver's Full Name"
-                                    onChange={handleChange}
-                                    required
-                                />
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Banknote size={16} color="var(--text-muted)" /> Fine Amount (₹)</span>
-                                </label>
-                                <input
-                                    name="fine_amount"
-                                    type="number"
-                                    className="form-control"
-                                    style={{ fontWeight: 600 }}
-                                    onChange={handleChange}
-                                    value={formData.fine_amount}
-                                    required
-                                />
-                            </div>
-                        </div>
-
-                        {/* Violation Info */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                            <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Incident Details</h4>
-                            <div className="form-group">
-                                <label className="form-label">
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><AlertCircle size={16} color="var(--text-muted)" /> Violation Type</span>
-                                </label>
-                                <div style={{ position: 'relative' }}>
-                                    <select
-                                        name="violation_type"
-                                        className="form-control"
-                                        style={{ appearance: 'none', cursor: 'pointer' }}
-                                        onChange={handleTypeChange}
-                                        required
-                                        value={formData.violation_type}
-                                    >
-                                        <option value="">Select Type</option>
-                                        {types.map((type) => (
-                                            <option key={type._id} value={type._id}>
-                                                {type.type_name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <div style={{ position: 'absolute', right: '1rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--text-muted)' }}>
-                                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><MapPin size={16} color="var(--text-muted)" /> Location</span>
-                                </label>
-                                <div style={{ position: 'relative' }}>
-                                    <select
-                                        name="area"
-                                        className="form-control"
-                                        style={{ appearance: 'none', cursor: 'pointer' }}
-                                        onChange={handleChange}
-                                        required
-                                        value={formData.area}
-                                    >
-                                        <option value="">Select Area</option>
-                                        {areas.map((area) => (
-                                            <option key={area._id} value={area._id}>
-                                                {area.area_name}, {area.city}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <div style={{ position: 'absolute', right: '1rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--text-muted)' }}>
-                                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><FileText size={16} color="var(--text-muted)" /> Notes</span>
-                                </label>
-                                <textarea
-                                    name="notes"
-                                    rows={3}
-                                    className="form-control"
-                                    style={{ resize: 'none' }}
-                                    onChange={handleChange}
-                                    placeholder="Additional details..."
-                                ></textarea>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div style={{ marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-light)' }}>
-                        <motion.button
-                            whileHover={{ scale: 1.01 }}
-                            whileTap={{ scale: 0.99 }}
-                            type="submit"
-                            className="btn btn-primary"
-                            style={{ width: '100%', padding: '0.875rem' }}
-                            disabled={loading}
-                        >
-                            {loading ? (
-                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" style={{ width: '1.25rem', height: '1.25rem', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                            ) : (
-                                <><Save size={18} /> Register Violation</>
-                            )}
-                        </motion.button>
-                    </div>
-                </form>
-            </motion.div>
-        </div>
-    );
-};
-
-export default RegisterViolation;
+                            <div className="form-group"><label className="form-label" htmlFor="notes">Notes (optional)</label>
+                                <textarea id="notes" className="form-control" name="notes" rows={3} maxLength={2000} value={form.notes} onChange={change} /></div>
+                            <button className="btn btn-primary" type="submit"><FilePlus size={18} aria-hidden="true" />{submission.busy ? 'Registering...' : 'Register violation'}</button>
+                        </fieldset>
+                    </form>
+                </section>
+            </>}
+    </div>;
+}
